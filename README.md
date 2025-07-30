@@ -69,13 +69,13 @@ return {
 			end,
 			{ desc = "Cycle marks up" },
 		},
-        {
-            "<leader>M",
-            function()
-                require("cycle_trail").clear_marks()
-            end,
-            { desc = "Clear all marks" },
-        }
+		{
+			"<leader>M",
+			function()
+				require("cycle_trail").clear_marks()
+			end,
+			{ desc = "Clear all marks" },
+		}
 	},
 })
 ```
