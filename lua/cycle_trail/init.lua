@@ -87,6 +87,7 @@ function M.get_number_of_marks()
 end
 
 function M.setup(opts)
+	opts = opts or {}
 	define_sign({
 		text = opts.text or "󱚐",
 		texthl = opts.texthl or "Special",
