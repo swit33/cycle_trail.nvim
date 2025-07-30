@@ -96,6 +96,7 @@ function M.setup(opts)
 	})
 	-- vim.opt.statuscolumn = "%s"
 	vim.api.nvim_create_user_command("RemoveMarks", clear_marks, { desc = "Clear all CycleTrail marks" })
+	vim.notify("CycleTrail setup complete", vim.log.levels.INFO)
 end
 
 return M
