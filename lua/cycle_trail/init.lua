@@ -1,9 +1,51 @@
+---@class CycleTrail
+---@field add_mark fun()
+---@field pop_and_jump fun(leave_mark: boolean)
+---@field get_number_of_marks fun(): number
+---@field cycle_marks fun(direction: "up"|"down")
+---@field setup fun(opts: CycleTrailOpts)
 local M = {}
 
+local util = require("cycle_trail.util")
+
+---@class CycleTrailOpts
+---@field text string or nil
+---@field texthl highlight_group or nil
+---@field linehl highlight_group or nil
+---@field numhl highlight_group or nil
+---@field setup_clear_command boolean
+
+---@alias extmark_id number
+---@alias namespace_id number
+---@alias sign_group string
+---@alias highlight_group string
+
+---@class CycleTrailQueueItem
+---@field buf number
+---@field id extmark_id
+
+---@class SignOpts
+---@field text string
+---@field texthl highlight_group
+---@field linehl highlight_group
+---@field numhl highlight_group
+
+---@class CycleTrailPosition
+---@field line number
+---@field col number
+---@field buf number
+
+---@type CycleTrailQueueItem[]
 local mark_queue = {}
+---@type namespace_id
 local ns_id = vim.api.nvim_create_namespace("cycletrail")
+---@type sign_group
 local sign_group = "CycleTrailSigns"
 
+---@type number|nil
+local selected_mark = nil
+
+---@param opts SignOpts
 local function define_sign(opts)
 	vim.fn.sign_define("CycleTrailMark", {
 		text = opts.text,
@@ -13,18 +55,8 @@ local function define_sign(opts)
 	})
 end
 
-local function get_current_position()
-	local pos = vim.api.nvim_win_get_cursor(0)
-	local buf = vim.api.nvim_get_current_buf()
-	return {
-		line = pos[1],
-		col = pos[2],
-		buf = buf,
-	}
-end
-
 function M.add_mark()
-	local pos = get_current_position()
+	local pos = util.get_current_position()
 	for _, mark in ipairs(mark_queue) do
 		local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, ns_id, mark.id, {})
 		if mark.buf == pos.buf and pos.line - 1 == mark_info[1] then
@@ -37,47 +69,68 @@ function M.add_mark()
 		lnum = pos.line,
 		priority = 10,
 	})
+	selected_mark = 1
 end
 
-local function find_window_with_bufnum(bufnum)
-	local win_ids = vim.api.nvim_list_wins()
-	for _, win_id in ipairs(win_ids) do
-		if vim.api.nvim_win_get_buf(win_id) == bufnum then
-			return win_id
-		end
-	end
-	return nil
-end
-
-function M.pop_and_jump(leave_mark)
-	if #mark_queue == 0 then
-		vim.notify("No marks in queue", vim.log.levels.WARN)
-		return
-	end
-	local mark = table.remove(mark_queue)
-	if not vim.api.nvim_buf_is_valid(mark.buf) then
-		vim.notify("Buffer for mark is invalid", vim.log.levels.ERROR)
-		return
-	end
-	if leave_mark == true then
-		M.add_mark()
-	end
+---@param mark CycleTrailQueueItem
+local function jump_to_mark(mark)
 	if vim.api.nvim_get_current_buf() ~= mark.buf then
-		local win_id = find_window_with_bufnum(mark.buf)
+		local win_id = util.find_window_with_bufnum(mark.buf)
 		if win_id then
 			vim.api.nvim_set_current_win(win_id)
 		else
 			vim.api.nvim_set_current_buf(mark.buf)
 		end
 	end
-
 	local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, ns_id, mark.id, {})
 	vim.api.nvim_win_set_cursor(0, { mark_info[1] + 1, mark_info[2] })
+end
 
+---@param direction "up"|"down"
+function M.cycle_marks(direction)
+	if #mark_queue == 0 then
+		vim.notify("No marks in queue", vim.log.levels.WARN)
+		return
+	end
+	if #mark_queue == 1 then
+		return
+	end
+	if direction == "up" then
+		if selected_mark == 1 then
+			selected_mark = #mark_queue
+		else
+			selected_mark = selected_mark - 1
+		end
+	elseif direction == "down" then
+		if selected_mark == #mark_queue then
+			selected_mark = 1
+		else
+			selected_mark = selected_mark + 1
+		end
+	else
+		vim.notify("Invalid direction", vim.log.levels.ERROR)
+	end
+	jump_to_mark(mark_queue[selected_mark])
+end
+
+---@param leave_mark boolean
+function M.pop_and_jump(leave_mark)
+	if #mark_queue == 0 then
+		vim.notify("No marks in queue", vim.log.levels.WARN)
+		return
+	end
+	local mark = table.remove(mark_queue)
+	if not util.is_buffer_valid(mark.buf) then
+		return
+	end
+	if leave_mark == true then
+		M.add_mark()
+	end
+	jump_to_mark(mark)
 	vim.fn.sign_unplace(sign_group, { buffer = mark.buf, id = mark.id })
 end
 
-local function clear_marks()
+function M.clear_marks()
 	mark_queue = {}
 	vim.fn.sign_unplace(sign_group)
 end
@@ -86,17 +139,22 @@ function M.get_number_of_marks()
 	return #mark_queue
 end
 
+---@param opts CycleTrailOpts
 function M.setup(opts)
 	opts = opts or {}
+	local setup_clear_command = opts.setup_clear_command or true
 	define_sign({
 		text = opts.text or "󱚐",
 		texthl = opts.texthl or "Special",
 		linehl = opts.linehl or "WildMenu",
 		numhl = opts.numhl or "WildMenu",
 	})
-	-- vim.opt.statuscolumn = "%s"
-	vim.api.nvim_create_user_command("RemoveMarks", clear_marks, { desc = "Clear all CycleTrail marks" })
-	vim.notify("CycleTrail setup complete", vim.log.levels.INFO)
+	if setup_clear_command == true then
+		vim.api.nvim_create_user_command("RemoveMarks", function()
+			require("cycle_trail").clear_marks()
+		end, { desc = "Clear all CycleTrail marks" })
+	end
 end
+---
 
 return M
