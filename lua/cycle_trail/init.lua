@@ -1,8 +1,11 @@
 ---@class CycleTrail
 ---@field add_mark fun()
----@field pop_and_jump fun(leave_mark: boolean)
----@field get_number_of_marks fun(): number
 ---@field cycle_marks fun(direction: "up"|"down")
+---@field pop_and_jump fun(leave_mark: boolean)
+---@field rewind fun()
+---@field smart_rewind fun()
+---@field clear_marks fun()
+---@field get_number_of_marks fun(): number
 ---@field setup fun(opts: CycleTrailOpts)
 local M = {}
 
@@ -42,6 +45,9 @@ local ns_id = vim.api.nvim_create_namespace("cycletrail")
 ---@type sign_group
 local sign_group = "CycleTrailSigns"
 
+---@type CycleTrailQueueItem|nil
+local rewind_mark = nil
+
 ---@type number|nil
 local selected_mark = nil
 
@@ -55,11 +61,18 @@ local function define_sign(opts)
 	})
 end
 
+local function remove_mark(mark)
+	vim.api.nvim_buf_del_extmark(mark.buf, ns_id, mark.id)
+	vim.fn.sign_unplace(sign_group, { buffer = mark.buf, id = mark.id })
+end
+
 function M.add_mark()
 	local pos = util.get_current_position()
-	for _, mark in ipairs(mark_queue) do
+	for i, mark in ipairs(mark_queue) do
 		local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, ns_id, mark.id, {})
 		if mark.buf == pos.buf and pos.line - 1 == mark_info[1] then
+			table.remove(mark_queue, i)
+			remove_mark(mark)
 			return
 		end
 	end
@@ -70,6 +83,11 @@ function M.add_mark()
 		priority = 10,
 	})
 	selected_mark = 1
+end
+
+local function set_rewind_mark()
+	local pos = util.get_current_position()
+	rewind_mark = { buf = pos.buf, id = vim.api.nvim_buf_set_extmark(pos.buf, ns_id, pos.line - 1, pos.col, {}) }
 end
 
 ---@param mark CycleTrailQueueItem
@@ -125,12 +143,39 @@ function M.pop_and_jump(leave_mark)
 	end
 	if leave_mark == true then
 		M.add_mark()
+	else
+		set_rewind_mark()
 	end
 	jump_to_mark(mark)
-	vim.fn.sign_unplace(sign_group, { buffer = mark.buf, id = mark.id })
+	remove_mark(mark)
+end
+
+function M.rewind()
+	if not rewind_mark then
+		vim.notify("No marks to rewind to", vim.log.levels.WARN)
+		return
+	end
+	local mark = rewind_mark
+	rewind_mark = nil
+	M.add_mark()
+	jump_to_mark(mark)
+	remove_mark(mark)
+end
+
+function M.smart_rewind()
+	if not rewind_mark then
+		M.pop_and_jump(true)
+	else
+		M.rewind()
+	end
 end
 
 function M.clear_marks()
+	for _, mark in ipairs(mark_queue) do
+		if util.is_buffer_valid(mark.buf) then
+			remove_mark(mark)
+		end
+	end
 	mark_queue = {}
 	vim.fn.sign_unplace(sign_group)
 end

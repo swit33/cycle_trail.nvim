@@ -51,9 +51,9 @@ return {
 		{
 			"L",
 			function()
-				require("cycle_trail").pop_and_jump(true)
+				require("cycle_trail").smart_rewind()
 			end,
-			{ desc = "Jump to last mark and mark current position" },
+			{ desc = "Smart rewind jump" },
 		},
 		{
 			"]m",
@@ -85,35 +85,62 @@ return {
 
 Set a mark with `m` and jump to it with `M`. This will remove the mark from the queue.
 Use `L` to jump to the last mark and mark the current position.
+If it is set to smart rewind:
+	- If you recently jumped to a mark ('M'), jump back to the position you were at and leave a mark where you came from.
+	- If you recently placed a mark ('m'), cycle back to it and leave a mark where you came from.
 Use `]m` and `[m` to cycle through the marks.
 Use `<leader>M` or `:RemoveMarks` to clear all marks.
 
 ## API
 
-### CycleTrail.add_mark()
+```lua
+CycleTrail.add_mark()
+```
 
 Adds the current position to the mark queue.
 
-### CycleTrail.pop_and_jump(leave_mark)
-
-Removes the last mark from the queue and jumps to it.
-If `leave_mark` is `true`, the current position is also marked.
-
-### CycleTrail.get_number_of_marks()
-
-Returns the number of marks in the queue.
-
-### CycleTrail.cycle_marks(direction)
+```lua
+CycleTrail.cycle_marks(direction)
+```
 
 Cycles through the marks in the queue.
 `direction` can be either `"up"` or `"down"`.
 
+```lua
+CycleTrail.pop_and_jump(leave_mark)
+```
 
-### CycleTrail.clear_marks()
+Removes the last mark from the queue and jumps to it.
+If `leave_mark` is `true`, the current position is also marked.
+
+```lua
+CycleTrail.rewind()
+
+```
+
+Jumps to the las position before jumping to the mark.
+
+```lua
+CycleTrail.smart_rewind()
+```
+
+Smart rewind jump.
+
+```lua
+CycleTrail.clear_marks()
+```
 
 Clears all marks from the queue.
 
-### CycleTrail.setup(opts)
+```lua
+CycleTrail.get_number_of_marks()
+```
+
+Returns the number of marks in the queue.
+
+```lua
+CycleTrail.setup(opts)
+```
 
 Sets up the plugin.
 `opts` is a table with the following fields:
