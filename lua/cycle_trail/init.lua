@@ -1,3 +1,4 @@
+--- TODO: Rewrite the plugin; it works now but it's not very good
 ---@class CycleTrail
 ---@field add_mark fun()
 ---@field cycle_marks fun(direction: "up"|"down")
@@ -19,9 +20,12 @@ local util = require("cycle_trail.util")
 ---@field setup_clear_command boolean
 
 ---@alias extmark_id number
----@alias namespace_id number
----@alias sign_group string
 ---@alias highlight_group string
+
+---@class LoadedMark
+---@field filename string
+---@field line number
+---@field col number
 
 ---@class CycleTrailQueueItem
 ---@field buf number
@@ -40,10 +44,6 @@ local util = require("cycle_trail.util")
 
 ---@type CycleTrailQueueItem[]
 local mark_queue = {}
----@type namespace_id
-local ns_id = vim.api.nvim_create_namespace("cycletrail")
----@type sign_group
-local sign_group = "CycleTrailSigns"
 
 ---@type CycleTrailQueueItem|nil
 local rewind_mark = nil
@@ -62,23 +62,23 @@ local function define_sign(opts)
 end
 
 local function remove_mark(mark)
-	vim.api.nvim_buf_del_extmark(mark.buf, ns_id, mark.id)
-	vim.fn.sign_unplace(sign_group, { buffer = mark.buf, id = mark.id })
+	vim.api.nvim_buf_del_extmark(mark.buf, util.ns_id, mark.id)
+	vim.fn.sign_unplace(util.sign_group, { buffer = mark.buf, id = mark.id })
 end
 
 function M.add_mark()
 	local pos = util.get_current_position()
 	for i, mark in ipairs(mark_queue) do
-		local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, ns_id, mark.id, {})
+		local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, util.ns_id, mark.id, {})
 		if mark.buf == pos.buf and pos.line - 1 == mark_info[1] then
 			table.remove(mark_queue, i)
 			remove_mark(mark)
 			return
 		end
 	end
-	local new_mark = vim.api.nvim_buf_set_extmark(pos.buf, ns_id, pos.line - 1, pos.col, {})
+	local new_mark = vim.api.nvim_buf_set_extmark(pos.buf, util.ns_id, pos.line - 1, pos.col, {})
 	table.insert(mark_queue, { buf = pos.buf, id = new_mark })
-	vim.fn.sign_place(new_mark, sign_group, "CycleTrailMark", pos.buf, {
+	vim.fn.sign_place(new_mark, util.sign_group, "CycleTrailMark", pos.buf, {
 		lnum = pos.line,
 		priority = 10,
 	})
@@ -87,7 +87,7 @@ end
 
 local function set_rewind_mark()
 	local pos = util.get_current_position()
-	rewind_mark = { buf = pos.buf, id = vim.api.nvim_buf_set_extmark(pos.buf, ns_id, pos.line - 1, pos.col, {}) }
+	rewind_mark = { buf = pos.buf, id = vim.api.nvim_buf_set_extmark(pos.buf, util.ns_id, pos.line - 1, pos.col, {}) }
 end
 
 ---@param mark CycleTrailQueueItem
@@ -100,7 +100,7 @@ local function jump_to_mark(mark)
 			vim.api.nvim_set_current_buf(mark.buf)
 		end
 	end
-	local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, ns_id, mark.id, {})
+	local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, util.ns_id, mark.id, {})
 	vim.api.nvim_win_set_cursor(0, { mark_info[1] + 1, mark_info[2] })
 end
 
@@ -177,11 +177,54 @@ function M.clear_marks()
 		end
 	end
 	mark_queue = {}
-	vim.fn.sign_unplace(sign_group)
+	vim.fn.sign_unplace(util.sign_group)
 end
 
 function M.get_number_of_marks()
 	return #mark_queue
+end
+
+function M.save_marks()
+	local result = {}
+	for _, mark in ipairs(mark_queue) do
+		if util.is_buffer_valid(mark.buf) then
+			local mark_info = vim.api.nvim_buf_get_extmark_by_id(mark.buf, util.ns_id, mark.id, {})
+			table.insert(result, {
+				filename = vim.api.nvim_buf_get_name(mark.buf),
+				line = mark_info[1],
+				col = mark_info[2],
+			})
+		end
+	end
+	if #result > 0 then
+		util.save_to_shada(result)
+	end
+end
+
+function M.load_marks()
+	local loaded_marks = util.load_from_shada()
+	if loaded_marks == nil then
+		return
+	end
+	local result = {}
+	for _, mark in ipairs(loaded_marks) do
+		local bufnr = vim.fn.bufnr(mark.filename)
+		if util.is_buffer_valid(bufnr, true) then
+			local new_mark = vim.api.nvim_buf_set_extmark(bufnr, util.ns_id, mark.line, mark.col, {})
+			vim.fn.sign_place(new_mark, util.sign_group, "CycleTrailMark", bufnr, {
+				lnum = mark.line + 1,
+				priority = 10,
+			})
+			table.insert(result, {
+				buf = bufnr,
+				id = new_mark,
+			})
+		end
+	end
+	if #result > 0 then
+		selected_mark = 1
+	end
+	mark_queue = result
 end
 
 ---@param opts CycleTrailOpts
